@@ -1,4 +1,4 @@
-# My CTF Challenges
+# My CTF Writeups
 
 A repository for interesting CTF challenges and my writeups :golf:
 
