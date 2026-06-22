@@ -30,7 +30,7 @@ TypeError: argument value is invalid
 
 这个错误并不是问题的核心（但也提醒我们之后无法利用分号的隔断进行xsleak），但是st98通读了处理cookie的源码，发现了更加关键的代码
 
-```
+```txt
 https://github.com/pillarjs/cookies/blob/3274e7dd3afc93e13707ef2ed3d43d84c39cf213/index.js
 ```
 
@@ -436,4 +436,6 @@ const cleanupFalseGuess = async () => {
 比较遗憾的是，本地测试成功，远程还是遇到很多问题。无论如何，核心的逻辑是一致的。
 
 ![屏幕截图 2026-06-18 190524](./images/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202026-06-18%20190524.png)
+
+更多细节可以见[这里](https://github.com/Auspiow/my-ctf-writeups/tree/main/challenges/2026_SJTU_CTF/web/InvisibleNotes)
 
