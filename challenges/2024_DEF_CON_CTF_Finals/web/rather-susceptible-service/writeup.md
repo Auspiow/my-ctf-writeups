@@ -102,6 +102,27 @@ x-api-key: 2be22c769f2f84d7fcd96fa6e3f911b4
 
 拿到apikey之后就可以去 `/api/users/1/posts` 拿到 `debug_password`
 
+```python
+@app.get("/api/users/<int:user_id>/posts")
+def api_get_user_posts(user_id):
+    if request.headers.get('x-API-KEY', None) != API_KEY:
+        return jsonify({'error': 'Invalid API key'}), 403
+    
+    db_conn = get_db_conn()
+    try:
+        with db_conn:
+            cur = db_conn.cursor()
+            cur.execute('SELECT * FROM posts WHERE user_id = ?;', (user_id,))
+            posts = cur.fetchall()
+            cur.close()
+    except sqlite3.Error as e:
+        return jsonify({'error': f'failed to get users: {e}'}), 500
+    finally:
+        db_conn.close()
+
+    return jsonify({'error': None, 'posts': [dict(x) for x in posts]})
+```
+
 ```txt
 {"error":null,"posts":[{"body":"The debug password is: 0c1569556618924a21424ac0f6b6c595","id":1,"title":"Debug password","user_id":1}]}
 ```
@@ -110,6 +131,39 @@ x-api-key: 2be22c769f2f84d7fcd96fa6e3f911b4
 debug_password=0c1569556618924a21424ac0f6b6c595
 ```
 
-执行指令就可以了
+拿到debug_password直接去debug页面执行指令就可以了
+
+```python
+@app.post("/debug")
+def do_debug():
+    error = False
+    debug_password_input = request.form.get('debug_password', None)
+    if not debug_password:
+        flash('Missing debug_password', 'error')
+        error = True
+    command = request.form.get('command', None)
+    if not command:
+        flash('Missing command', 'error')
+        error = True
+        
+    if debug_password_input != debug_password:
+        flash('Incorrect debug password', 'error')
+        error = True
+        
+    if error:
+        return redirect(url_for('debug_form'))
+    
+    output = subprocess.check_output(command, shell=True).decode()
+
+    return render_template('debug.html', session=session, output=output)
+```
 
 ![image-20260621230624619](./images/image-20260621230624619.png)
+
+这道题我尝试直接把server.py的源码发给Chatgpt5.5，对方只思考了10秒钟就给了我最关键的漏洞🤯
+
+然而最厉害的人类选手还是做了将近50分钟🤫，但是人类解题的魅力就在于不断的试错和复盘。
+
+跑步比赛，赛车比赛以及自动驾驶竞速都有其存在的意义，不是吗
+
+更多细节可以见[这里](https://github.com/Auspiow/my-ctf-writeups/tree/main/challenges/2024_DEF_CON_CTF_Finals/web/rather-susceptible-service)
