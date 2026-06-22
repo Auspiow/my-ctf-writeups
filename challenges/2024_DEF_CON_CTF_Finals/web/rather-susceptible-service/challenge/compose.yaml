@@ -1,0 +1,8 @@
+services:
+  web:
+    build:
+      context: .
+    image: rather-susceptible-service:local
+    container_name: rather-susceptible-service-local
+    ports:
+      - "31337:31337"
